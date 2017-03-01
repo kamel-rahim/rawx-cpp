@@ -12,7 +12,9 @@ Using C++ and Facebook proxygen.
 * [Wangle]
 
 ## Installation
-   # git clone https://github.com/kamel-rahim/rawx-cpp.git
-   # cd rawx-cpp
-   # cmake -DSYS=OFF .
-   # make 
+   ```
+   $ git clone https://github.com/kamel-rahim/rawx-cpp.git
+   $ cd rawx-cpp
+   $ cmake -DSYS=OFF .
+   $ make
+   ```
