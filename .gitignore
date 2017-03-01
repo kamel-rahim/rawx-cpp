@@ -1,3 +1,42 @@
+# Emacs temporary files
+*~
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Debug files
+*.dSYM/
+*.su
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*x86_64
+*.hex
+
+
+# CMake files
 CMakeCache.txt
 CMakeFiles
 CMakeScripts

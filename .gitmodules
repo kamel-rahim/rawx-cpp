@@ -1,0 +1,12 @@
+[submodule "3rd/proxygen"]
+	path = 3rd/proxygen
+	url = https://github.com/facebook/proxygen.git
+[submodule "3rd/gtest"]
+	path = 3rd/gtest
+	url = https://github.com/google/googletest
+[submodule "3rd/glog"]
+	path = 3rd/glog
+	url = https://github.com/google/glog.git
+[submodule "3rd/gflags"]
+	path = 3rd/gflags
+	url = https://github.com/gflags/gflags.git
