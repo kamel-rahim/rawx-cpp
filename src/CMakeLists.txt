@@ -23,3 +23,7 @@ add_library(rawx-server SHARED
   rawx.hpp
   rawx.cpp)
 target_link_libraries(rawx-server ${GTEST_LIBRARIES} ${GFLAGS_LIBRARIES} ${GLOG_LIBRARIES})
+
+add_executable(main server.cpp rawx.cpp blob.cpp utils.cpp )
+target_link_libraries(main ${GTEST_LIBRARIES} ${GFLAGS_LIBRARIES} ${GLOG_LIBRARIES} pthread
+  ${PROXYGENHTTPSERVER_LIBRARIES} ${PROXYGENCURL_LIBRARIES} ${WANGLE_LIBRARIES} ${FOLLY_LIBRARIES})

@@ -16,8 +16,10 @@
  * License along with this library.
  */
 
-#include "rawx.hpp"
 
+#include "rawx.hpp"
+#include <glog/logging.h>
+#include <gflags/gflags.h>
 #include <proxygen/httpserver/RequestHandlerFactory.h>
 #include <proxygen/httpserver/ResponseHandler.h>
 #include <proxygen/httpserver/ResponseBuilder.h>
@@ -40,12 +42,25 @@ using proxygen::RequestHandler;
 using proxygen::HTTPMethod;
 using proxygen::ResponseBuilder;
 using proxygen::HTTPMessage;
+using proxygen::HTTPHeaderCode;
 using blob::Slice;
 using blob::FileSlice;
 using utils::RequestCounter;
 
 
-void RawxHandlerFactory::onServerStart(folly::EventBase*) noexcept {}
+DEFINE_string(workingDirectory, "" , "");
+DEFINE_string(OIO_NS, "", "Namespace");
+DEFINE_string(server_hostname, "", "Hostname of the server");
+DEFINE_string(instanceID, "",
+              "Unique ID of the service (defaults to the service name)");
+DEFINE_string(access_log, "", "");
+DEFINE_string(error_log, "", "");
+
+void RawxHandlerFactory::onServerStart(folly::EventBase*) noexcept {
+    requestCounter = std::shared_ptr<RequestCounter>(new RequestCounter());
+    errorFile.open(FLAGS_error_log , std::ios_base::out);
+    accessFile.open(FLAGS_access_log , std::ios_base::out);
+}
 
 void RawxHandlerFactory::onServerStop() noexcept {}
 
@@ -53,42 +68,48 @@ RequestHandler* RawxHandlerFactory::onRequest(RequestHandler*,
                                               HTTPMessage* msg) noexcept {
     auto method = msg->getMethod();
     if (!method) {
-        serviceLog.LogToPrint("INF", "Error no Method recognize");
-        // TODO(KR) Write access log and error
+        serviceLog.LogToPrint("INF", "Error no Method detected");
+        return nullptr;
     }
     switch (*method) {
         case HTTPMethod::GET:
-            return new DownloadHandler(requestCounter);
+            if (msg->getURL() == "/stat")
+                return new StatHandler(requestCounter, &errorFile);
+            else if (msg->getURL() == "/info")
+                return new InfoHandler(requestCounter, &errorFile);
+            else
+                return new DownloadHandler(requestCounter, &errorFile,
+                                           &accessFile);
             break;
         case HTTPMethod::PUT:
-            return new UploadHandler(requestCounter);
+            return new UploadHandler(requestCounter, &errorFile, &accessFile);
             break;
         case HTTPMethod::DELETE:
-            return new RemovalHandler(requestCounter);
+            return new RemovalHandler(requestCounter, &errorFile, &accessFile);
             break;
         default:
+            serviceLog.LogToPrint("INF", "Error Method not recognize");
             return nullptr;
-            // TODO(KR) Write error
     }
     return nullptr;
 }
 
 bool DownloadHandler::headerCheck(proxygen::HTTPMessage *headers) {
+    DLOG(INFO) << "DownloadHandler Checking Header";
     std::string tmpheader = headers->getHeaders().rawGet("X-oio-req-id");
     if (tmpheader.empty())
         return false;
     accessLog.RequestID(tmpheader);
     path = headers->getURL();
-
+    DLOG(INFO) << "DownloadHandler Header Req-id Received";
     if (path.empty())
         return false;
-    path = path.substr(0, 3) + "/" + path;
-
+    path = path.substr(1, 3) + "/" + path.substr(1);
+    DLOG(INFO) << "DownloadHandler Header Path Received";
     tmpheader = headers->getHeaders().rawGet("Range");
     if (!tmpheader.empty()) {
         return download.setRange(tmpheader);
     }
-
     return true;
 }
 
@@ -110,11 +131,15 @@ void DownloadHandler::Abort() noexcept {
 void DownloadHandler::onRequest(
     std::unique_ptr<proxygen::HTTPMessage> headers) noexcept {
     beginOfRequest = std::time(nullptr);
+    DLOG(INFO) << "DownloadHandling";
     requestCounter->incGetHits();
+    serviceLog.SetUpBasic(FLAGS_server_hostname, FLAGS_instanceID);
+    accessLog.SetUpBasic(FLAGS_server_hostname, FLAGS_instanceID);
     accessLog.RequestType("GET");
     if (!headerCheck(headers.get())) {
         serviceLog.LogToPrint("INF", "Header not conform to the GET request");
-        ResponseBuilder(downstream_).status(400, "Bad Request");
+        ResponseBuilder(downstream_).status(400, "Bad Request")
+                .sendWithEOM();
         requestCounter->incR4xxHits();
         return;
     }
@@ -122,7 +147,8 @@ void DownloadHandler::onRequest(
     if (!download.Prepare().Ok()) {
         serviceLog.LogToPrint("INF", "Error with the path to the Chunk");
         accessLog.StatusCode("404");
-        ResponseBuilder(downstream_).status(404, "Chunk not found");
+        ResponseBuilder(downstream_).status(404, "Chunk not found")
+                .sendWithEOM();
         requestCounter->incR4xxHits();
         return;
     }
@@ -132,6 +158,7 @@ void DownloadHandler::onRequest(
 }
 
 void DownloadHandler::sendHeader() noexcept {
+    DLOG(INFO) << "DownloadHandler Sending Header";
     auto namesValues = xattr.HTTPNamesValues();
     ResponseBuilder(downstream_).status(206, "Partial Content");
     for (auto &elem : namesValues) {
@@ -143,6 +170,7 @@ void DownloadHandler::sendHeader() noexcept {
 }
 
 void DownloadHandler::sendData() noexcept {
+    DLOG(INFO) << "DownloadHandler Sending Data";
     std::shared_ptr<Slice> slice;
     while (!download.isEof()) {
         if (!download.Read(slice).Ok()) {
@@ -158,10 +186,12 @@ void DownloadHandler::sendData() noexcept {
 }
 
 void DownloadHandler::onError(proxygen::ProxygenError err) noexcept {
+    DLOG(INFO) << "DownloadHandler Error Happened";
     serviceLog.LogToPrint("INF", getErrorString(err));
 }
 
 void DownloadHandler::onBody(std::unique_ptr<folly::IOBuf>) noexcept {
+    DLOG(INFO) << "DownloadHandler Body Received";
     serviceLog.LogToPrint("INF", "No data should be send on a GET Request");
 }
 
@@ -177,6 +207,7 @@ void DownloadHandler::requestComplete() noexcept {
 void DownloadHandler::onEOM() noexcept  {}
 
 bool UploadHandler::headerCheck(proxygen::HTTPMessage *headers) {
+    DLOG(INFO) << "UploadHandler Checking Header";
     std::vector<std::string> names {"content-id", "container-id",
                 "content-storage-policy", "content-chunk-method",
                 "content-path", "chunk-id", "chunk-pos"};
@@ -214,16 +245,21 @@ bool UploadHandler::GetClientAddr() {
 }
 
 
-void UploadHandler::onRequest(
-    std::unique_ptr<proxygen::HTTPMessage> headers) noexcept {
+void UploadHandler::onRequest(std::unique_ptr<proxygen::HTTPMessage> headers)
+        noexcept {
+    DLOG(INFO) << "UploadHandling";
+    serviceLog.SetUpBasic(FLAGS_server_hostname, FLAGS_instanceID);
+    accessLog.SetUpBasic(FLAGS_server_hostname, FLAGS_instanceID);
     requestCounter->incPutHits();
     accessLog.RequestType("PUT");
     beginOfRequest = std::time(nullptr);
     headerCheck(headers.get());
     upload.Path(path);
     if (!upload.Prepare().Ok()) {
+        DLOG(INFO) << "Error with the path of the file";
         serviceLog.LogToPrint("INF", "Error with the path of file");
-        ResponseBuilder(downstream_).status(400, "Bad Request").send();
+        ResponseBuilder(downstream_).status(400, "Bad Request")
+                .closeConnection();
         accessLog.StatusCode("400");
         requestCounter->incR4xxHits();
     }
@@ -231,6 +267,7 @@ void UploadHandler::onRequest(
 
 void UploadHandler::onBody(std::unique_ptr<folly::IOBuf> body)
         noexcept  {
+    DLOG(INFO) << "UploadHandler Receiving Body";
     sizeUploaded += body->length();
     std::shared_ptr<Slice> slice(new FileSlice(body->writableData(),
                                                body->length()));
@@ -238,23 +275,27 @@ void UploadHandler::onBody(std::unique_ptr<folly::IOBuf> body)
 }
 
 void UploadHandler::sendHeader() noexcept {
+    DLOG(INFO) << "UploadHandler Sending Header";
     std::vector<std::string> names {"container-id", "content-id",
                 "content-path", "content-version", "content-storage-policy",
                 "content-chunk-method", "chunk-id", "chunk-hash", "chunk-pos",
                 "chunk-size"};
     ResponseBuilder(downstream_).status(201, "Created");
     accessLog.StatusCode("201");
+    DLOG(INFO) << "Sending status";
     for (auto &elem : names) {
         ResponseBuilder(downstream_).header<std::string>(
-            xattr.HttpPrefix()+elem, xattr.getHTTP(elem));
+            xattr.HttpPrefix() + elem, xattr.getHTTP(elem));
     }
     ResponseBuilder(downstream_).header<std::string>("Content-Length",
-                                                     std::to_string(size()));
-    ResponseBuilder(downstream_).sendWithEOM();
+                                                     std::to_string(size()))
+            .sendWithEOM();
     requestCounter->incR2xxHits();
+    DLOG(INFO) << "Header sent";
 }
 
 void UploadHandler::onEOM() noexcept  {
+    DLOG(INFO) << "UploadHandler End of Message received";
     upload.Commit();
     accessLog.UserID(xattr.getHTTP("container-id"));
     sendHeader();
@@ -289,6 +330,8 @@ bool RemovalHandler::headerCheck(proxygen::HTTPMessage* headers) {
 
 void RemovalHandler::onRequest(std::unique_ptr<proxygen::HTTPMessage> headers)
         noexcept  {
+    serviceLog.SetUpBasic(FLAGS_server_hostname, FLAGS_instanceID);
+    accessLog.SetUpBasic(FLAGS_server_hostname, FLAGS_instanceID);
     requestCounter->incDelHits();
     accessLog.RequestType("DELETE");
     beginOfRequest = std::time(nullptr);
@@ -347,40 +390,55 @@ bool RemovalHandler::GetClientAddr() {
 
 void StatHandler::onRequest(std::unique_ptr<proxygen::HTTPMessage>)
         noexcept {
-    // TODO(KR)
+    DLOG(INFO) << "StatHandling";
+    serviceLog.SetUpBasic(FLAGS_server_hostname, FLAGS_instanceID);
+    requestCounter->incStatHits();
+    std::string content =  requestCounter->ToText();
+    content += "config volume " + FLAGS_workingDirectory + "\n";
+    ResponseBuilder(downstream_).status(200, "OK")
+            .header("Content-Length", std::to_string(content.length()))
+            .body(content)
+            .sendWithEOM();
+    DLOG(INFO) << "StatHandler Header sent";
 }
-void StatHandler::onBody(std::unique_ptr<folly::IOBuf>) noexcept {
-    // TODO(KR)
-}
-void StatHandler::onEOM() noexcept {
-    // TODO(KR)
-}
+
+void StatHandler::onBody(std::unique_ptr<folly::IOBuf>) noexcept {}
+
+void StatHandler::onEOM() noexcept {}
+
 void StatHandler::onUpgrade(proxygen::UpgradeProtocol) noexcept {
-    // TODO(KR)
+    serviceLog.LogToPrint("INF", "Upgrade to h2c are not handled");
 }
-void StatHandler::requestComplete() noexcept {
-    // TODO(KR)
-}
-void StatHandler::onError(proxygen::ProxygenError) noexcept {
-    // TODO(KR)
+
+void StatHandler::requestComplete() noexcept {}
+
+void StatHandler::onError(proxygen::ProxygenError err) noexcept {
+    serviceLog.LogToPrint("INF", getErrorString(err));
 }
 
 void InfoHandler::onRequest(std::unique_ptr<proxygen::HTTPMessage>)
         noexcept {
-    // TODO(KR)
+    serviceLog.SetUpBasic(FLAGS_server_hostname, FLAGS_instanceID);
+    requestCounter->incInfoHits();
+    std::string content = "namespace " + FLAGS_OIO_NS + "\n"
+            + "path " + FLAGS_workingDirectory + "\n";
+    ResponseBuilder(downstream_).status(200, "OK")
+            .header("Content-Length", std::to_string(content.length()))
+            .body(content)
+            .sendWithEOM();
+    DLOG(INFO) << "InfoHandler Header sent";
 }
-void InfoHandler::onBody(std::unique_ptr<folly::IOBuf>) noexcept {
-    // TODO(KR)
-}
-void InfoHandler::onEOM() noexcept {
-    // TODO(KR)
-}
+
+void InfoHandler::onBody(std::unique_ptr<folly::IOBuf>) noexcept {}
+
+void InfoHandler::onEOM() noexcept {}
+
 void InfoHandler::onUpgrade(proxygen::UpgradeProtocol) noexcept {
-    // TODO(KR)
+    serviceLog.LogToPrint("INF", "Upgrade to h2c are not handled");
 }
-void InfoHandler::requestComplete() noexcept {
-    // TODO(KR)
-}
-void InfoHandler::onError(proxygen::ProxygenError) noexcept {
-    // TODO(KR)
+
+void InfoHandler::requestComplete() noexcept {}
+
+void InfoHandler::onError(proxygen::ProxygenError err) noexcept {
+    serviceLog.LogToPrint("INF", getErrorString(err));
 }

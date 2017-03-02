@@ -19,6 +19,7 @@
 #ifndef SRC_UTILS_HPP_
 #define SRC_UTILS_HPP_
 
+#include <fstream>
 #include <mutex> //NOLINT
 #include <utility>
 #include <vector>
@@ -36,8 +37,10 @@ namespace utils {
 class AccessLog {
  public:
     AccessLog() {}
+    explicit AccessLog(std::fstream *fileStream)
+            : logFileStream {fileStream} {}
     void SetUpBasic(std::string hostname, std::string instanceID);
-    std::string LogToPrint(std::string level, std::string message);
+    void LogToPrint(std::string level, std::string message);
 
     inline void RemoteClient(std::string remoteClient) {
         this->remoteClient = remoteClient;
@@ -63,6 +66,9 @@ class AccessLog {
     inline void LocalServer(std::string localServer) {
         this->localServer = localServer;
     }
+    inline void Hostname(std::string hostname) {
+        this->hostname = hostname;
+    }
 
  private:
     std::string timestamp;
@@ -81,6 +87,7 @@ class AccessLog {
     std::string userID {"-"};
     std::string requestID {"-"};
     std::string message;
+    std::fstream *logFileStream;
 };
 
 /**
@@ -90,8 +97,10 @@ class AccessLog {
 struct ServiceLog {
  public:
     ServiceLog() {}
+    explicit ServiceLog(std::fstream *fileStream)
+            : logFileStream {fileStream} {}
     void SetUpBasic(std::string hostname, std::string instanceID);
-    std::string LogToPrint(std::string level, std::string message);
+    void LogToPrint(std::string level, std::string message);
  private:
     std::string timestamp;
     std::string hostname;
@@ -101,6 +110,7 @@ struct ServiceLog {
     std::string logType;
     std::string level;
     std::string message;
+    std::fstream *logFileStream;
 };
 
 /**
@@ -170,6 +180,7 @@ class RequestCounter {
     void incR404Hits();
     void incBread(unsigned count);
     void incBwritten(unsigned count);
+    std::string ToText();
 
  private:
     //

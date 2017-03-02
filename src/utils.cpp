@@ -24,6 +24,8 @@
 #include <ctime>
 #include <string>
 #include <vector>
+#include <iostream>
+#include <sstream>
 #include "utils.hpp"
 
 using utils::XAttr;
@@ -47,7 +49,7 @@ void ServiceLog::SetUpBasic(std::string hostname, std::string instanceID) {
     this->logType = "log";
 }
 
-std::string ServiceLog::LogToPrint(std::string level, std::string message) {
+void ServiceLog::LogToPrint(std::string level, std::string message) {
     std::time_t stime = std::time(nullptr);
     std::tm *ltime = std::localtime(&stime);
     char time_print[30];
@@ -55,11 +57,12 @@ std::string ServiceLog::LogToPrint(std::string level, std::string message) {
     this->timestamp = std::string(time_print);
     this->level = level;
     this->message = message;
-    return timestamp + " " + hostname + " " +  instanceID + " " + PID + " " +
-            threadID + " " + logType + " " + level + " " + message;
+    *logFileStream << timestamp << " " << hostname << " " <<  instanceID
+                   << " " << PID << " " << threadID << " " << logType << " "
+                   << level << " " << message << std::endl;
 }
 
-std::string AccessLog::LogToPrint(std::string level, std::string message) {
+void AccessLog::LogToPrint(std::string level, std::string message) {
     std::time_t stime = std::time(nullptr);
     std::tm *ltime = std::localtime(&stime);
     char time_print[30];
@@ -67,11 +70,12 @@ std::string AccessLog::LogToPrint(std::string level, std::string message) {
     this->timestamp = std::string(time_print);
     this->level = level;
     this->message = message;
-    return timestamp + " " + hostname + " " + instanceID + " " + PID + " " +
-            threadID + " " + logType + " " + level + " " + localServer + " " +
-            remoteClient + " " + requestType + " " + statusCode + " " +
-            responseTime + " " + responseSize + " " + userID + " " + requestID +
-            " " + message;
+    *logFileStream << timestamp << " " << hostname << " " << instanceID << " "
+                   << PID << " " << threadID << " " << logType << " " << level
+                   << " " << localServer << " " << remoteClient << " "
+                   << requestType << " " << statusCode << " " << responseTime
+                   << " " << responseSize << " " << userID << " " << requestID
+                   << " " << message << std::endl;
 }
 
 
@@ -264,4 +268,36 @@ void RequestCounter::incBwritten(unsigned count) {
     rcMutex.lock();
     bwritten += count;
     rcMutex.unlock();
+}
+
+std::string RequestCounter::ToText() {
+    std::stringstream ss;
+    rcMutex.lock();
+    ss << "counter req.time " << (putTime + getTime + delTime + statTime +
+                                  rawTime + otherTime) << std::endl;
+    ss << "counter req.time.put " << putTime << std::endl;
+    ss << "counter req.time.get " << getTime << std::endl;
+    ss << "counter req.time.del " << delTime << std::endl;
+    ss << "counter req.time.stat " << statTime << std::endl;
+    ss << "counter req.time.info " << infoTime << std::endl;
+    ss << "counter req.time.raw " << rawTime << std::endl;
+    ss << "counter req.time.other " << otherTime << std::endl;
+    ss << "counter req.hits.put " << putHits << std::endl;
+    ss << "counter req.hits.get " << getHits << std::endl;
+    ss << "counter req.hits.del " << delHits << std::endl;
+    ss << "counter req.hits.stat " << statHits << std::endl;
+    ss << "counter req.hits.info " << infoHits << std::endl;
+    ss << "counter req.hits.raw " << rawHits << std::endl;
+    ss << "counter req.hits.2xx " << r2xxHits << std::endl;
+    ss << "counter req.hits.4xx " << r4xxHits << std::endl;
+    ss << "counter req.hits.5xx " << r5xxHits << std::endl;
+    ss << "counter req.hits.other " << otherHits << std::endl;
+    ss << "counter req.hits.403 " << r403Hits << std::endl;
+    ss << "counter req.hits.404 " << r404Hits << std::endl;
+    //
+    ss << "counter req.hits.bread " << bread << std::endl;
+    ss << "counter req.hits.bwritten " << bwritten << std::endl;
+    rcMutex.unlock();
+
+    return ss.str();
 }
