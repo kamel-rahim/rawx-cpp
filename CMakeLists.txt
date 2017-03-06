@@ -209,7 +209,7 @@ elseif (GUESS AND PROXYGEN_GUESS)
     NAME proxygen
     HINTS /usr/include /usr/local/include)
 else()
-  execute_process(COMMAND "test -e build_already_done || (./deps.sh && touch build_already_done)"
+  execute_process(COMMAND "./deps.sh"
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/3rd/proxygen/proxygen)
   find_library(PROXYGENCURL_LIBRARIES
     NAMES proxygencurl
