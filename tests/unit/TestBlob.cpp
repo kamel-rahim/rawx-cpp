@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library.
  */
-
+#include <stdio.h>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
 #include "blob.hpp"
@@ -26,6 +26,7 @@ using blob::Cause;
 using blob::DiskUpload;
 using blob::DiskDownload;
 using blob::DiskRemoval;
+using blob::FileSlice;
 using utils::XAttr;
 
 class DiskUploadFixture : public testing::Test {
@@ -98,6 +99,23 @@ TEST_F(DiskUploadFixture, makeParentOnGoodPath) {
     ASSERT_TRUE(upload.Prepare().Ok());
 }
 
+TEST_F(DiskUploadFixture, WriteData) {
+    std::string path {"./goodpathdata"};
+    upload.Path(path);
+    ASSERT_TRUE(upload.Prepare().Ok());
+    uint8_t test[4] = {'T', 'E', 'S', 'T'};
+    std::shared_ptr<FileSlice> slice(new FileSlice(test, 4));
+    ASSERT_TRUE(upload.Write(slice).Ok());
+}
+
+TEST_F(DiskUploadFixture, WriteEmptyData) {
+    std::string path {"./goodpathedata"};
+    upload.Path(path);
+    ASSERT_TRUE(upload.Prepare().Ok());
+    std::shared_ptr<FileSlice> slice(new FileSlice());
+    ASSERT_TRUE(upload.Write(slice).Ok());
+}
+
 // TEST DISKDOWNLOAD
 
 TEST_F(DiskDownloadFixture, GoodPathOpen) {
@@ -140,5 +158,12 @@ TEST_F(DiskRemovalFixture, EmptyPathError) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    int rc = RUN_ALL_TESTS();
+    remove("./badpath/aze");
+    remove("./goodpath");
+    remove("./badpath/azeza");
+    remove("./goodpathdata");
+    remove("./goodpathedata");
+    remove("./goodpathdir/good/path/good");
+    return rc;
 }

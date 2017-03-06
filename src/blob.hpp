@@ -19,6 +19,8 @@
 #ifndef SRC_BLOB_HPP_
 #define SRC_BLOB_HPP_
 
+#include <openssl/md5.h>
+#include <gflags/gflags.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -94,7 +96,7 @@ class Status {
     std::string Encode() const;
 };
 
-std::ostream &operator<<(std::ostream &out, const Status s);
+std::ostream &operator<<(std::ostream &out, const Status &s);
 
 /**
  * Simple wrapper to initiate a Status depicting a success.
@@ -148,7 +150,7 @@ class Slice {
 
 class FileSlice : public Slice {
  public:
-    FileSlice();
+    FileSlice() {}
     FileSlice(uint8_t* data, uint64_t length ) {
         append(data, (uint32_t) length);
     }
@@ -190,7 +192,9 @@ class Removal {
 
 class DiskUpload : public Upload {
  public:
-    DiskUpload() {}
+    DiskUpload() {
+        MD5_Init(&md5Context);
+    }
     explicit DiskUpload(std::string path) : path{path} {}
     inline void Path(std::string path) {this->path = path;}
     inline void XAttr(utils::XAttr *xattr) {this->xattr = xattr;}
@@ -199,8 +203,10 @@ class DiskUpload : public Upload {
     Status Write(std::shared_ptr<Slice>) override;
     Status Abort() override;
  private:
-    utils::XAttr *xattr;
+    utils::XAttr *xattr {nullptr};
     int fd {-1};
+    MD5_CTX md5Context;
+    unsigned char md5Hash[MD5_DIGEST_LENGTH];
     int makeParent(std::string path);
     std::string tmpPath;
     std::string path;
@@ -220,13 +226,13 @@ class DiskDownload : public Download {
     Status Read(std::shared_ptr<Slice>) override;
     Status Abort() override;
  private:
-    utils::XAttr *xattr;
+    utils::XAttr *xattr {nullptr};
     int fd {-1};
     int begin {-1};
     int end {-1};
+    int read_size {-1};
     std::string path;
     FILE *file {NULL};
-    int buffer_size {-1};
 };
 
 class DiskRemoval : public Removal {
@@ -238,7 +244,7 @@ class DiskRemoval : public Removal {
     Status Commit() override;
     Status Abort() override;
  private:
-    utils::XAttr *xattr;
+    utils::XAttr *xattr {nullptr};
     int fd {-1};
     std::string path;
     FILE *file {NULL};

@@ -28,7 +28,6 @@
 #include "blob.hpp"
 #include "rawx.hpp"
 
-
 using proxygen::HTTPServer;
 using folly::SocketAddress;
 using proxygen::RequestHandlerFactory;
@@ -54,9 +53,10 @@ int main(int argc, char * argv[]) {
     options.shutdownOn = {SIGINT, SIGTERM};
     options.enableContentCompression = false;
     options.handlerFactories = RequestHandlerChain()
-            .addThen<RawxHandlerFactory>()
+            .addThen<RawxHandlerFactory>(
+                FLAGS_ip + ":" + std::to_string(FLAGS_http_port))
             .build();
-    options.h2cEnabled = true;
+    options.h2cEnabled = false;
 
     HTTPServer server(std::move(options));
     server.bind(IPs);

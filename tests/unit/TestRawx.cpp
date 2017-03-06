@@ -89,19 +89,6 @@ TEST_F(RawxHandlerFactoryFixture, DELETE_Header_return_RemovalHandler) {
     ASSERT_TRUE(typeid(RemovalHandler).hash_code()
                 ==  typeid(*handler).hash_code());
 }
-
-// Testing DownloadHandler
-TEST_F(DownloadHandlerFixture, CheckAllValueHere) {
-    HTTPMessage msg;
-    HTTPHeaders headers = msg.getHeaders();
-// GET //09C7861345B1834C36C7493A2322A3D4C0237FADB407E68155F51E5066922972
-    // HTTP/1.1
-// Host: 127.0.0.1:6010
-// Accept-Encoding: identity
-// Range: bytes=0-13
-// X-oio-req-id: 524364949D2352A824071FBBFF7D24FC
-}
-
 TEST_F(DownloadHandlerFixture, CheckMissingValue) {
     HTTPMessage msg;
     HTTPHeaders headers = msg.getHeaders();
@@ -114,6 +101,8 @@ TEST_F(UploadHandlerFixture, CheckAllValueHere) {
     //    PUT //09C7861345B1834C36C7493A2322A3D4C0237FADB407E68155F51E5066922972
     // HTTP/1.1
     //            Host: 127.0.0.1:6010
+    msg.setURL("/09C7861345B1834C36C7493A2322A3D4C"
+               "0237FADB407E68155F51E5066922972");
     headers.rawAdd("Accept-Encoding", "identity");
     headers.rawAdd("x-oio-chunk-meta-chunk-id",
                    "09C7861345B1834C36C7493A2322A3D4C"
@@ -131,19 +120,6 @@ TEST_F(UploadHandlerFixture, CheckAllValueHere) {
     headers.rawAdd("x-oio-chunk-meta-content-version", "1487856374424018");
     ASSERT_TRUE(uploadHandler.headerCheck(&msg));
 }
-
-// TEST_F(UploadHandlerFixture, CheckMissingValue) {
-//     // TODO(KR)
-// }
-
-// // Testing RemovalHandler
-// TEST_F(RemovalHandlerFixture, CheckAllValueHere) {
-//     // TODO(KR)
-// }
-
-// TEST_F(RemovalHandlerFixture, CheckMissingValue) {
-//     // TODO(KR)
-// }
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -18,6 +18,7 @@
 
 #include <pthread.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <attr/xattr.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -36,16 +37,16 @@ using utils::RequestCounter;
 void AccessLog::SetUpBasic(std::string hostname, std::string instanceID) {
     this->hostname = hostname;
     this->instanceID = instanceID;
-    this->PID = ::getpid();
-    this->threadID = pthread_self();
+    this->PID = std::to_string(::getpid());
+    this->threadID = std::to_string(pthread_self());
     this->logType = "access";
 }
 
 void ServiceLog::SetUpBasic(std::string hostname, std::string instanceID) {
     this->hostname = hostname;
     this->instanceID = instanceID;
-    this->PID = ::getpid();
-    this->threadID = pthread_self();
+    this->PID = std::to_string(::getpid());
+    this->threadID = std::to_string(pthread_self());
     this->logType = "log";
 }
 
@@ -85,7 +86,7 @@ bool XAttr::retrieveXAttr(int fd) {
     for (auto &elem : attributes) {
         if (fgetxattr(fd, (xattrPrefix + elem.xattrName).c_str(), buffer,
                       size) != 0) {
-            // TODO(KR): check the error (LOG)
+            DLOG(INFO) << "error reading Xattr " << elem.xattrName;
         } else {
             elem.value = std::string(buffer, size);
         }
@@ -101,7 +102,7 @@ bool XAttr::writeXAttr(int fd) {
         if (fsetxattr(fd, (xattrPrefix + elem.xattrName).c_str(),
                       elem.value.c_str(), elem.value.size(), XATTR_CREATE)
             != 0) {
-            // TODO(KR): check the error (LOG)
+            DLOG(INFO) << "error writting Xattr " << elem.xattrName;
         }
     }
     return true;
@@ -168,26 +169,31 @@ void RequestCounter::incPutTime(unsigned int time) {
     putTime += time;
     rcMutex.unlock();
 }
+
 void RequestCounter::incGetTime(unsigned int time) {
     rcMutex.lock();
     getTime += time;
     rcMutex.unlock();
 }
+
 void RequestCounter::incDelTime(unsigned int time) {
     rcMutex.lock();
     delTime += time;
     rcMutex.unlock();
 }
+
 void RequestCounter::incStatTime(unsigned int time) {
     rcMutex.lock();
     statTime += time;
     rcMutex.unlock();
 }
-void RequestCounter::incinfoTime(unsigned int time) {
+
+void RequestCounter::incInfoTime(unsigned int time) {
     rcMutex.lock();
     infoTime += time;
     rcMutex.unlock();
 }
+
 void RequestCounter::incRawTime(unsigned int time) {
     rcMutex.lock();
     rawTime += time;

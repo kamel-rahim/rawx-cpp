@@ -18,9 +18,12 @@
 
 #ifndef SRC_RAWX_HPP_
 #define SRC_RAWX_HPP_
+// #include <zlib.h>
 #include <fstream>
 #include <string>
+#include <memory>
 #include <proxygen/httpserver/RequestHandlerFactory.h> // NOLINT
+// #include <proxygen/lib/utils/ZlibStreamCompressor.h> // NOLINT
 #include "utils.hpp"
 #include "blob.hpp"
 
@@ -28,6 +31,9 @@ namespace rawx {
 
 class RawxHandlerFactory : public proxygen::RequestHandlerFactory {
  public:
+    RawxHandlerFactory() {}
+    explicit RawxHandlerFactory(std::string localServer)
+            : localServer_{localServer}    {}
     void onServerStart(folly::EventBase* evb) noexcept override;
     void onServerStop() noexcept override;
     proxygen::RequestHandler* onRequest(proxygen::RequestHandler*,
@@ -40,17 +46,21 @@ class RawxHandlerFactory : public proxygen::RequestHandlerFactory {
     utils::ServiceLog serviceLog;
     std::fstream errorFile;
     std::fstream accessFile;
+    std::string localServer_;
 };
 
 class DownloadHandler : public proxygen::RequestHandler {
  public:
     DownloadHandler() {}
     explicit DownloadHandler(std::shared_ptr<utils::RequestCounter> rc,
-                             std::fstream *errFile, std::fstream *accFile)
-            : requestCounter {rc}, errorFile {errFile}, accessFile {accFile} {}
+                             std::fstream *errFile, std::fstream *accFile,
+                             std::string localServer)
+            : localServer_{localServer},
+              requestCounter {rc}, accessLog {accFile}, serviceLog {errFile} {
+                  accessLog.LocalServer(localServer);
+              }
     void sendData() noexcept;
     void sendHeader() noexcept;
-    bool GetClientAddr();
     bool headerCheck(proxygen::HTTPMessage *headers);
     void onRequest(std::unique_ptr<proxygen::HTTPMessage> headers)
             noexcept override;
@@ -62,27 +72,31 @@ class DownloadHandler : public proxygen::RequestHandler {
     void Abort() noexcept;
 
  private:
+    std::string localServer_;
     std::shared_ptr<utils::RequestCounter> requestCounter;
-    time_t beginOfRequest;
-    time_t endOfRequest;
+    std::chrono::steady_clock::time_point beginOfRequest;
+    std::chrono::steady_clock::time_point endOfRequest;
+    //    proxygen::ZlibStreamDecompressor zlibStreamDecompressor
+    // {proxygen::ZlibCompressionType::NONE};
     utils::AccessLog accessLog;
     utils::ServiceLog serviceLog;
     blob::DiskDownload download;
     utils::XAttr xattr;
     std::string path;
-    std::fstream *errorFile;
-    std::fstream *accessFile;
 };
 
 class UploadHandler : public proxygen::RequestHandler {
  public:
     UploadHandler() {}
     explicit UploadHandler(std::shared_ptr<utils::RequestCounter> rc,
-                           std::fstream *errFile, std::fstream *accFile)
-            : requestCounter {rc}, errorFile {errFile}, accessFile {accFile} {}
+                           std::fstream *errFile, std::fstream *accFile,
+                           std::string localServer)
+            : localServer_{localServer},
+              requestCounter {rc}, accessLog{accFile}, serviceLog{errFile} {
+                  accessLog.LocalServer(localServer);
+              }
     int size();
     void sendHeader() noexcept;
-    bool GetClientAddr();
     bool headerCheck(proxygen::HTTPMessage *headers);
     void onRequest(std::unique_ptr<proxygen::HTTPMessage> headers)
             noexcept override;
@@ -94,27 +108,32 @@ class UploadHandler : public proxygen::RequestHandler {
     void Abort() noexcept;
 
  private:
+    std::string localServer_;
+    bool errorHappened {false};
     std::shared_ptr<utils::RequestCounter> requestCounter;
-    time_t beginOfRequest;
-    time_t endOfRequest;
+    std::chrono::steady_clock::time_point beginOfRequest;
+    std::chrono::steady_clock::time_point endOfRequest;
     utils::AccessLog accessLog;
+    //    proxygen::ZlibStreamCompressor zlibStreamCompressor
+    //    {proxygen::ZlibCompressionType::NONE, 0};
     utils::ServiceLog serviceLog;
     int sizeUploaded {0};
     blob::DiskUpload upload;
     utils::XAttr xattr;
     std::string path;
-    std::fstream *errorFile;
-    std::fstream *accessFile;
 };
 
 class RemovalHandler : public proxygen::RequestHandler {
  public:
     RemovalHandler() {}
     explicit RemovalHandler(std::shared_ptr<utils::RequestCounter> rc,
-                            std::fstream *errFile, std::fstream *accFile)
-            : requestCounter {rc}, errorFile {errFile}, accessFile {accFile} {}
+                            std::fstream *errFile, std::fstream *accFile,
+                            std::string localServer)
+            : localServer_{localServer},
+              requestCounter{rc}, accessLog{accFile}, serviceLog{errFile} {
+                  accessLog.LocalServer(localServer);
+              }
     void sendHeader();
-    bool GetClientAddr();
     bool headerCheck(proxygen::HTTPMessage *headers);
     void onRequest(std::unique_ptr<proxygen::HTTPMessage> headers)
             noexcept override;
@@ -126,16 +145,15 @@ class RemovalHandler : public proxygen::RequestHandler {
     void Abort() noexcept;
 
  private:
+    std::string localServer_;
     std::shared_ptr<utils::RequestCounter> requestCounter;
-    time_t beginOfRequest;
-    time_t endOfRequest;
+    std::chrono::steady_clock::time_point beginOfRequest;
+    std::chrono::steady_clock::time_point endOfRequest;
     std::string chunk_id;
     utils::AccessLog accessLog;
     utils::ServiceLog serviceLog;
     blob::DiskRemoval removal;
     std::string path;
-    std::fstream *errorFile;
-    std::fstream *accessFile;
 };
 
 class StatHandler : public proxygen::RequestHandler {
@@ -143,7 +161,7 @@ class StatHandler : public proxygen::RequestHandler {
     StatHandler() {}
     explicit StatHandler(std::shared_ptr<utils::RequestCounter> rc,
                          std::fstream *errFile)
-            :requestCounter {rc}, errorFile {errFile} {}
+            :requestCounter {rc}, serviceLog {errFile} {}
     void onRequest(std::unique_ptr<proxygen::HTTPMessage> headers)
             noexcept override;
     void onBody(std::unique_ptr<folly::IOBuf> body) noexcept override;
@@ -154,9 +172,10 @@ class StatHandler : public proxygen::RequestHandler {
 
  private:
     std::shared_ptr<utils::RequestCounter> requestCounter;
+    std::chrono::steady_clock::time_point beginOfRequest;
+    std::chrono::steady_clock::time_point endOfRequest;
     utils::ServiceLog serviceLog;
     std::string workingDirectory;
-    std::fstream *errorFile;
 };
 
 class InfoHandler : public proxygen::RequestHandler {
@@ -176,6 +195,8 @@ class InfoHandler : public proxygen::RequestHandler {
  private:
     std::string OIONamespace;
     std::string workingDirectory;
+    std::chrono::steady_clock::time_point beginOfRequest;
+    std::chrono::steady_clock::time_point endOfRequest;
     std::shared_ptr<utils::RequestCounter> requestCounter;
     utils::ServiceLog serviceLog;
 };

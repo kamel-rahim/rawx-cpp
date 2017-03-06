@@ -15,9 +15,13 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library.
  */
+
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <openssl/md5.h>
+#include <glog/logging.h>
+#include <gflags/gflags.h>
 #include <cstdio>
 #include <cerrno>
 #include <fstream>
@@ -28,6 +32,8 @@ using blob::Cause;
 using blob::DiskUpload;
 using blob::DiskDownload;
 using blob::DiskRemoval;
+
+DEFINE_int32(read_buffer_size, 65536, "");
 
 int DiskUpload::makeParent(std::string path) {
     std::size_t found = 0;
@@ -60,7 +66,6 @@ Status DiskUpload::Prepare() {
         return Status(Cause::InternalError);
     }
     fd = fileno(file);
-    xattr->writeXAttr(fd);
     return Status();
 }
 
@@ -68,6 +73,14 @@ Status DiskUpload::Prepare() {
  * Finalise the write (flush) and push it to the non temporary place
  */
 Status DiskUpload::Commit() {
+    MD5_Final(md5Hash, &md5Context);
+    std::stringstream ss;
+    ss << std::hex;
+    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+        ss << (unsigned int)  md5Hash[i];
+    }
+    xattr->addXAttr("chunk.hash", ss.str());
+    xattr->writeXAttr(fd);
     if (fflush(file) != 0)
         return Status(Cause::InternalError);
     return Status();
@@ -80,13 +93,13 @@ Status DiskUpload::Write(std::shared_ptr<Slice> slice) {
     int sizeSent = 0;
     size_t rc;
     do {
+        MD5_Update(&md5Context, slice->data(), slice->size());
         rc = fwrite(slice->data() - sizeSent, sizeof(char),
                     slice->size() - sizeSent, file);
         sizeSent += rc;
     }while (sizeSent != slice->size());
     return Status();
 }
-
 
 /**
  * Stop the writing and delete the temporary file
@@ -105,11 +118,12 @@ Status DiskDownload::Prepare() {
     file = fopen(path.c_str(), "r");
     if (file == NULL)
         return Status(Cause::InternalError);
-
-    if (begin > -1 )
+    if (begin >= 0) {
         if (fseek(file, begin, SEEK_SET) != 0)
             return Status(Cause::InternalError);
-
+    } else {
+        read_size = FLAGS_read_buffer_size;
+    }
     fd = fileno(file);
     xattr->retrieveXAttr(fd);
     return Status();
@@ -119,16 +133,15 @@ Status DiskDownload::Prepare() {
  * Check if there still are data to read
  */
 bool DiskDownload::isEof() {
-    return feof(file);
+    return feof(file) || end == 0;
 }
 
 bool DiskDownload::setRange(int begin, int end) {
     if ( begin < 0 || end < 0 || begin > end)
         return false;
-
     this->begin = begin;
     this->end = end;
-    buffer_size = end - begin;
+    read_size = end - begin;
     return true;
 }
 
@@ -146,14 +159,19 @@ bool DiskDownload::setRange(std::string bytesRange) {
  * Read the data and fill the Slice
  */
 Status DiskDownload::Read(std::shared_ptr<Slice> slice) {
-    // FIXME(KR) this allocation can be problematic
-    char *buffer = new char(buffer_size);
-    int tmp_read = fread(buffer, sizeof(char), buffer_size, file);
-    if (tmp_read == 0) {
-        delete buffer;
+    uint8_t buffer[FLAGS_read_buffer_size];
+    int tmp_read = fread(buffer, sizeof(char), read_size, file);
+    if (tmp_read == 0 && ferror(file)) {
+        perror("DiskDownload fread");
         return Status(Cause::InternalError);
     }
-    slice->append(reinterpret_cast<uint8_t *>(buffer), tmp_read);
+    if (end > -1) {
+        end -= tmp_read;
+        if (read_size > end) {
+            read_size = end;
+        }
+    }
+    slice->append(buffer, tmp_read);
     return Status();
 }
 

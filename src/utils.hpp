@@ -19,6 +19,9 @@
 #ifndef SRC_UTILS_HPP_
 #define SRC_UTILS_HPP_
 
+#include <pthread.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <fstream>
 #include <mutex> //NOLINT
 #include <utility>
@@ -36,38 +39,44 @@ namespace utils {
  */
 class AccessLog {
  public:
-    AccessLog() {}
+    AccessLog() : PID {std::to_string(::getpid())},
+                   threadID {std::to_string(pthread_self())} {}
     explicit AccessLog(std::fstream *fileStream)
-            : logFileStream {fileStream} {}
+            :  PID {std::to_string(getpid())},
+               threadID {std::to_string(pthread_self())},
+               logFileStream {fileStream} {}
     void SetUpBasic(std::string hostname, std::string instanceID);
     void LogToPrint(std::string level, std::string message);
 
-    inline void RemoteClient(std::string remoteClient) {
-        this->remoteClient = remoteClient;
+    void RemoteClient(std::string remoteClient) {
+         this->remoteClient = remoteClient;
     }
-    inline void StatusCode(std::string statusCode) {
+    void StatusCode(std::string statusCode) {
         this->statusCode = statusCode;
     }
-    inline void RequestType(std::string requestType) {
+    void RequestType(std::string requestType) {
         this->requestType = requestType;
     }
-    inline void ResponseTime(std::string responseTime) {
+    void ResponseTime(std::string responseTime) {
         this->responseTime = responseTime;
     }
-    inline void ResponseSize(std::string responseSize) {
+    void ResponseSize(std::string responseSize) {
         this->responseSize = responseSize;
     }
-    inline void UserID(std::string userID) {
+    void UserID(std::string userID) {
         this->userID = userID;
     }
-    inline void RequestID(std::string requestID) {
+    void RequestID(std::string requestID) {
         this->requestID = requestID;
     }
-    inline void LocalServer(std::string localServer) {
+    void LocalServer(std::string localServer) {
         this->localServer = localServer;
     }
-    inline void Hostname(std::string hostname) {
+    void Hostname(std::string hostname) {
         this->hostname = hostname;
+    }
+    void Message(std::string message) {
+        this->message = message;
     }
 
  private:
@@ -96,9 +105,13 @@ class AccessLog {
  */
 struct ServiceLog {
  public:
-    ServiceLog() {}
+    ServiceLog() : PID {std::to_string(::getpid())},
+                   threadID {std::to_string(pthread_self())} {}
     explicit ServiceLog(std::fstream *fileStream)
-            : logFileStream {fileStream} {}
+            : PID {std::to_string(getpid())},
+              threadID {std::to_string(pthread_self())},
+              logFileStream {fileStream} {
+    }
     void SetUpBasic(std::string hostname, std::string instanceID);
     void LogToPrint(std::string level, std::string message);
  private:
@@ -154,16 +167,17 @@ class XAttr {
     };
     std::string httpPrefix {"X-oio-chunk-meta-"};
     std::string xattrPrefix {"user.grid."};
-    size_t sizeBuffer;
+    size_t sizeBuffer {1024};
 };
 
 class RequestCounter {
  public:
+    RequestCounter() {}
     void incPutTime(unsigned int time);
     void incGetTime(unsigned int time);
     void incDelTime(unsigned int time);
     void incStatTime(unsigned int time);
-    void incinfoTime(unsigned int time);
+    void incInfoTime(unsigned int time);
     void incRawTime(unsigned int time);
     void incOtherTime(unsigned int time);
     void incPutHits();
@@ -184,29 +198,29 @@ class RequestCounter {
 
  private:
     //
-    unsigned int putTime;
-    unsigned int getTime;
-    unsigned int delTime;
-    unsigned int statTime;
-    unsigned int infoTime;
-    unsigned int rawTime;
-    unsigned int otherTime;
+    unsigned int putTime {0};
+    unsigned int getTime {0};
+    unsigned int delTime {0};
+    unsigned int statTime {0};
+    unsigned int infoTime {0};
+    unsigned int rawTime {0};
+    unsigned int otherTime {0};
     //
-    unsigned int putHits;
-    unsigned int getHits;
-    unsigned int delHits;
-    unsigned int statHits;
-    unsigned int infoHits;
-    unsigned int rawHits;
-    unsigned int r2xxHits;
-    unsigned int r4xxHits;
-    unsigned int r5xxHits;
-    unsigned int otherHits;
-    unsigned int r403Hits;
-    unsigned int r404Hits;
+    unsigned int putHits {0};
+    unsigned int getHits {0};
+    unsigned int delHits {0};
+    unsigned int statHits {0};
+    unsigned int infoHits {0};
+    unsigned int rawHits {0};
+    unsigned int r2xxHits {0};
+    unsigned int r4xxHits {0};
+    unsigned int r5xxHits {0};
+    unsigned int otherHits {0};
+    unsigned int r403Hits {0};
+    unsigned int r404Hits {0};
     //
-    unsigned int bread;
-    unsigned int bwritten;
+    unsigned int bread {0};
+    unsigned int bwritten {0};
     //
     std::mutex rcMutex;
 };
